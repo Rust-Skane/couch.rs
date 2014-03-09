@@ -1,2 +1,7 @@
+RUSTC ?= rustc
+RUSTDOC ?= rustdoc
+RUSTPKG ?= rustpkg
+RUSTFLAGS ?= -O
+
 all:
-	rustc -L ${RUST_LIB_PATH}/rust-http/build main.rs
+	$(RUSTC) $(RUSTFLAGS) -L ${RUST_LIB_PATH}/rust-http/build main.rs
