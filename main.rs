@@ -123,3 +123,12 @@ fn test_create_database() {
   couch.create_database("rust");
   assert!(true);
 }
+
+#[test]
+fn test_create_document() {
+  let couch = Couch::new(from_str(server_url).unwrap());
+  let database = couch.get_database("rust");
+  let content = json::from_str("{\"magic\":true}");
+  database.create_document("test-doc-id", content);
+  assert!(true);
+}
