@@ -63,13 +63,16 @@ impl Couch {
 
     return match self.do_request(method::Put, path) {
       json::Object(tm) => {
-        return match tm.find(&~"ok") {
-          Some(&json::Boolean(true)) => Some(Database { server: self.server.clone(), database: name.to_owned() }),
-          _ => None
+        match tm.find(&~"ok") {
+          Some(&json::Boolean(true)) => Some(self.get_database(name)), _ => None
         }
       },
       _ => fail!("TODO: Wrong format")
     };
+  }
+  
+  pub fn get_database(&self, name: &str) -> Database {
+    return Database { server: self.server.clone(), database: name.to_owned() };
   }
 }
 
