@@ -5,14 +5,15 @@ extern crate extra;
 extern crate serialize;
 extern crate collections;
 
+use std::fmt;
 use std::io::net::tcp;
 
 use extra::url;
 use serialize::json;
 use collections::treemap;
 
+use http::method;
 use http::client::RequestWriter;
-use http::method::{Get};
 
 pub struct Couch {
   server: url::Url
@@ -23,28 +24,50 @@ impl Couch {
     return Couch { server: server };
   }
 
-  pub fn server_info(&self) -> ServerInfo {
+  fn do_request(&self, method: method::Method, path: ~str) -> json::Json {
     let mut url = self.server.clone();
 
-    url.path = ~"/";
+    url.path = path;
 
-    let request = match RequestWriter::<tcp::TcpStream>::new(Get, url) {
+    let request = match RequestWriter::<tcp::TcpStream>::new(method, url) {
       Ok(req) => req,
       Err(_) => fail!("TODO: Implement")
     };
 
     let mut response = match request.read_response() {
         Ok(response) => response,
-        Err(_) => fail!("TODO: This example can progress no further with no response :-("),
+        Err(e) => {
+          println!("{:?}", e);
+          fail!("TODO: This example can progress no further with no response :-(");
+        }
     };
 
-    let json = match json::from_reader(&mut response) {
+    return match json::from_reader(&mut response) {
       Ok(json) => json,
-      Err(_) => fail!("TODO: Not a CouchDB server?")
+      Err(e) => {
+        println!("{:?}", e);
+        fail!("TODO: Not a CouchDB server?");
+      }
     };
+  }
 
-    return match json {
+  pub fn server_info(&self) -> ServerInfo {
+    return match self.do_request(method::Get, ~"/") {
       json::Object(tm) => ServerInfo { json: tm },
+      _ => fail!("TODO: Wrong format")
+    };
+  }
+
+  pub fn create_database(&self, name: &str) -> Option<Database> {
+    let path = format_args!(fmt::format, "/{:s}", name);
+
+    return match self.do_request(method::Put, path) {
+      json::Object(tm) => {
+        return match tm.find(&~"ok") {
+          Some(&json::Boolean(true)) => Some(Database { server: self.server.clone(), database: name.to_owned() }),
+          _ => None
+        }
+      },
       _ => fail!("TODO: Wrong format")
     };
   }
@@ -77,6 +100,11 @@ impl ServerInfo {
   }
 }
 
+pub struct Database<'a> {
+  server: url::Url,
+  database: ~str
+}
+
 static server_url:&'static str = "http://localhost:5984/";
 
 #[test]
@@ -89,6 +117,6 @@ fn test_server_info() {
 #[test]
 fn test_create_database() {
   let couch = Couch::new(from_str(server_url).unwrap());
-  couch.create_database("Rust Skåne");
+  couch.create_database("rust");
   assert!(true);
 }
