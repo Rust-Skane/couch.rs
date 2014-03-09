@@ -7,3 +7,4 @@ Access CouchDb using Rust.
 
     export RUST_LIB_PATH=~/opensource/rust-deps
     make all
+    make test

@@ -1,3 +1,5 @@
+#[warn(experimental)];
+
 extern crate http;
 extern crate extra;
 extern crate serialize;
@@ -75,11 +77,11 @@ impl ServerInfo {
   }
 }
 
-fn main() {
-  let couch = Couch::new(from_str("http://localhost:5984/").unwrap());
+static server_url:&'static str = "http://localhost:5984/";
 
-  let server_info = couch.server_info();
-  println!("{:?}", server_info.couchdb());
-  println!("{:?}", server_info.uuid());
-  println!("{:?}", server_info.version());
+#[test]
+fn test_server_info() {
+  let couch = Couch::new(from_str(server_url).unwrap());
+  couch.server_info();
+  assert!(true);
 }
