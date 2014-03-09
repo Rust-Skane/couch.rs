@@ -85,3 +85,10 @@ fn test_server_info() {
   couch.server_info();
   assert!(true);
 }
+
+#[test]
+fn test_create_database() {
+  let couch = Couch::new(from_str(server_url).unwrap());
+  couch.create_database("Rust Skåne");
+  assert!(true);
+}
