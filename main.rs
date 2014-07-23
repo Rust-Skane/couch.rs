@@ -1,22 +1,44 @@
-#[warn(experimental)];
-
+extern crate url;
 extern crate http;
-extern crate extra;
 extern crate serialize;
-extern crate collections;
 
-use std::fmt;
-use std::io::net::tcp;
+use std::io;
 
-use extra::url;
 use serialize::json;
-use collections::treemap;
 
-use http::method;
-use http::client::RequestWriter;
+#[deriving(Decodable)]
+pub struct Vendor {
+  pub version: String, pub name: String
+}
+
+#[deriving(Decodable)]
+pub struct ServerInfo {
+  couchdb: String,
+  uuid: String,
+  version: String,
+  vendor: Vendor
+}
 
 pub struct Couch {
   server: url::Url
+}
+
+fn parse_json<T: serialize::Decodable<json::Decoder, json::DecoderError>>(body: io::IoResult<Vec<u8>>) -> Option<T> {
+  let body = match body {
+    Ok(b) => b, Err(_) => return None
+  };
+
+  let mut reader = io::BufReader::new(body.as_slice());
+  
+  let json = match json::from_reader(&mut reader) {
+    Ok(j) => j, Err(_) => return None
+  };
+
+  let mut decoder = json::Decoder::new(json);
+
+  return match serialize::Decodable::decode(&mut decoder) {
+    Ok(j) => Some(j), Err(_) => None
+  };
 }
 
 impl Couch {
@@ -24,172 +46,63 @@ impl Couch {
     return Couch { server: server };
   }
 
-  fn do_request(&self, method: method::Method, path: ~str) -> json::Json {
+  pub fn do_request(&self, method: http::method::Method, path: url::Path, body: Option<&[u8]>) -> io::IoResult<Vec<u8>> {
     let mut url = self.server.clone();
 
     url.path = path;
 
-    let request = match RequestWriter::<tcp::TcpStream>::new(method, url) {
-      Ok(req) => req,
-      Err(_) => fail!("TODO: Implement")
+    let mut request: http::client::RequestWriter = match http::client::RequestWriter::new(method, url) {
+      Ok(r) => r,
+      Err(e) => return Err(e)
     };
 
-    let mut response = match request.read_response() {
-        Ok(response) => response,
-        Err(e) => {
-          println!("{:?}", e);
-          fail!("TODO: This example can progress no further with no response :-(");
-        }
-    };
+    match body {
+      Some(body) => {
+        request.headers.content_length = Some(body.len());
+        match request.write(body) {
+          Err(e) => return Err(e), _ => ()
+        };
+      },
+      None => {}
+    }
 
-    return match json::from_reader(&mut response) {
-      Ok(json) => json,
-      Err(e) => {
-        println!("{:?}", e);
-        fail!("TODO: Not a CouchDB server?");
-      }
-    };
+    return match request.read_response() {
+      Ok(mut res) => res.read_to_end(),
+      Err((_, e)) => return Err(e)
+    }
+  }
+
+  pub fn get(&self, path: url::Path) -> io::IoResult<Vec<u8>> {
+    return self.do_request(http::method::Get, path, None);
+  }
+
+  pub fn delete(&self, path: url::Path) -> io::IoResult<Vec<u8>> {
+    return self.do_request(http::method::Put, path, None);
+  }
+
+  pub fn put(&self, path: url::Path, body: &[u8]) -> io::IoResult<Vec<u8>> {
+    return self.do_request(http::method::Put, path, Some(body));
+  }
+
+  pub fn post(&self, path: url::Path, body: &[u8]) -> io::IoResult<Vec<u8>> {
+    return self.do_request(http::method::Put, path, Some(body));
   }
 
   pub fn server_info(&self) -> ServerInfo {
-    return match self.do_request(method::Get, ~"/") {
-      json::Object(tm) => ServerInfo { json: tm },
-      _ => fail!("TODO: Wrong format")
-    };
-  }
-
-  pub fn create_database(&self, name: &str) -> Option<Database> {
-    let path = format_args!(fmt::format, "/{:s}", name);
-
-    return match self.do_request(method::Put, path) {
-      json::Object(tm) => {
-        match tm.find(&~"ok") {
-          Some(&json::Boolean(true)) => Some(self.get_database(name)), _ => None
-        }
-      },
-      _ => fail!("TODO: Wrong format")
-    };
-  }
-  
-  pub fn get_database(&self, name: &str) -> Database {
-    return Database { server: self.server.clone(), database: name.to_owned() };
-  }
-}
-
-pub struct ServerInfo {
-  json: ~treemap::TreeMap<~str, json::Json>
-}
-
-impl ServerInfo {
-  pub fn couchdb<'a>(&'a self) -> &'a str {
-    return match self.json.find(&~"couchdb") {
-      Some(&json::String(ref s)) => s.as_slice(),
-      _ => fail!("Fail!")
-    }
-  }
-  
-  pub fn uuid<'a>(&'a self) -> Option<&'a str> {
-    return match self.json.find(&~"uuid") {
-      Some(&json::String(ref s)) => Some(s.as_slice()),
-      _ => None
-    }
-  }
-
-  pub fn version<'a>(&'a self) -> &'a str {
-    return match self.json.find(&~"version") {
-      Some(&json::String(ref s)) => s.as_slice(),
-      _ => fail!("Fail!")
-    }
-  }
-}
-
-pub struct Database {
-  server: url::Url,
-  database: ~str
-}
-
-impl Database {
-  fn do_request(&self, method: method::Method, path: ~str, data: json::Json) -> json::Json {
-    let mut url = self.server.clone();
-
-    url.path = path;
-
-    let mut request = match RequestWriter::<tcp::TcpStream>::new(method, url) {
-      Ok(req) => req,
-      Err(_) => fail!("TODO: Implement")
-    };
-
-    //request.headers.content_length = Some(data.len());
-
-    data.to_writer(&mut request);
-    
-    let mut response = match request.read_response() {
-        Ok(response) => response,
-        Err(e) => {
-          println!("{:?}", e);
-          fail!("TODO: This example can progress no further with no response :-(");
-        }
-    };
-
-    return match json::from_reader(&mut response) {
-      Ok(json) => json,
-      Err(e) => {
-        println!("{:?}", e);
-        fail!("TODO: Not a CouchDB server?");
-      }
-    };
-  }  
-  
-  pub fn create_document(&self, id: &str, content: json::Json) -> Option<(~str, ~str)> {
-    let path = format_args!(fmt::format, "/{:s}/{:s}", self.database, id);
-
-    return match self.do_request(method::Put, path, content) {
-      json::Object(tm) => {
-        match tm.find(&~"ok") {
-          Some(&json::Boolean(true)) => {
-            let id = match tm.find(&~"id") {
-              Some(&json::String(ref s)) => s.to_owned(),
-              _ => fail!("finding id")
-            };
-
-            let rev = match tm.find(&~"rev") {
-              Some(&json::String(ref s)) => s.to_owned(),
-              _ => fail!("finding rev")
-            };
-            Some((id, rev))
-          },
-          _ => fail!("finding ok")
-        }
-      },
-      _ => None
+    return match parse_json(self.get(url::Path::new("/".to_string(), Vec::new(), None))) {
+      Some(s) => s, None => fail!("couchdb couldn't be parsed")
     };
   }
 }
 
-static server_url:&'static str = "http://localhost:5984/";
+static server_url: &'static str = "http://localhost:5984/";
 
 #[test]
 fn test_server_info() {
-  let couch = Couch::new(from_str(server_url).unwrap());
-  couch.server_info();
-  assert!(true);
-}
+  let info = Couch::new(from_str(server_url).unwrap()).server_info();
 
-#[test]
-fn test_create_database() {
-  let couch = Couch::new(from_str(server_url).unwrap());
-  couch.create_database("rust");
-  assert!(true);
-}
-
-#[test]
-fn test_create_document() {
-  let couch = Couch::new(from_str(server_url).unwrap());
-  let database = couch.get_database("rust");
-  let content = json::from_str("{\"magic\":true}").unwrap();
-  assert!(match database.create_document("test-doc-id", content) {
-    Some(_) => true,
-    _ => false
-  });
-  
+  assert_eq!(info.couchdb, "Welcome".to_string());
+  assert_eq!(info.uuid.len(), 32);
+  assert_eq!(info.version, info.vendor.version);
+  assert_eq!(info.vendor.name, "The Apache Software Foundation".to_string());
 }
